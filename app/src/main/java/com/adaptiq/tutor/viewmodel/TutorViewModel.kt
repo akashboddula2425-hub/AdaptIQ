@@ -330,16 +330,19 @@ class TutorViewModel(private val application: Application) : AndroidViewModel(ap
                         else it
                     }
                 }
-            } finally {
-                // Speak the final generated text
-                val finalMessage = _messages.value.find { it.id == responseId }?.content ?: ""
-                if (finalMessage.isNotBlank()) {
-                    tts?.speak(finalMessage, TextToSpeech.QUEUE_FLUSH, null, "TTS_ID_${responseId}")
-                }
             }
 
             _uiState.value = if (isDiagnostic) TutorUiState.DiagnosticOnboarding
                              else TutorUiState.Tutoring
+        }
+    }
+
+    /**
+     * Speaks the provided text using Text-to-Speech.
+     */
+    fun speakMessage(text: String) {
+        if (text.isNotBlank()) {
+            tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, UUID.randomUUID().toString())
         }
     }
 

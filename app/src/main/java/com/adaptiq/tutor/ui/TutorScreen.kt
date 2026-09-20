@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.FlashOn
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -164,7 +165,10 @@ fun TutorScreen(
                         }
 
                         items(messages, key = { it.id }) { message ->
-                            ChatBubble(message = message)
+                            ChatBubble(
+                                message = message,
+                                onReadAloud = { viewModel.speakMessage(message.content) }
+                            )
                         }
 
                         // Typing indicator when generating
@@ -504,7 +508,10 @@ private fun ChatInputBar(
 
 // ─── Chat Bubble ─────────────────────────────────────────────────────
 @Composable
-private fun ChatBubble(message: ChatMessage) {
+private fun ChatBubble(
+    message: ChatMessage,
+    onReadAloud: () -> Unit = {}
+) {
     val isUser = message.role == MessageRole.USER
     val alignment = if (isUser) Alignment.CenterEnd else Alignment.CenterStart
     Row(
@@ -514,22 +521,48 @@ private fun ChatBubble(message: ChatMessage) {
         if (!isUser) {
             // Optional AI Avatar could go here
         }
-        Surface(
-            color = if (isUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer,
-            shape = RoundedCornerShape(
-                topStart = 16.dp,
-                topEnd = 16.dp,
-                bottomStart = if (isUser) 16.dp else 0.dp,
-                bottomEnd = if (isUser) 0.dp else 16.dp
-            ),
-            modifier = Modifier.widthIn(max = 300.dp)
-        ) {
-            Text(
-                text = message.content,
-                modifier = Modifier.padding(16.dp),
-                color = if (isUser) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSecondaryContainer,
-                fontSize = 16.sp
-            )
+        Column(horizontalAlignment = if (isUser) Alignment.End else Alignment.Start) {
+            Surface(
+                color = if (isUser) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer,
+                shape = RoundedCornerShape(
+                    topStart = 16.dp,
+                    topEnd = 16.dp,
+                    bottomStart = if (isUser) 16.dp else 0.dp,
+                    bottomEnd = if (isUser) 0.dp else 16.dp
+                ),
+                modifier = Modifier.widthIn(max = 300.dp)
+            ) {
+                Text(
+                    text = message.content,
+                    modifier = Modifier.padding(16.dp),
+                    color = if (isUser) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSecondaryContainer,
+                    fontSize = 16.sp
+                )
+            }
+            if (!isUser) {
+                Row(
+                    modifier = Modifier.padding(top = 4.dp, start = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = onReadAloud,
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            imageVector = androidx.compose.material.icons.Icons.Default.VolumeUp,
+                            contentDescription = "Read Aloud",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "Read it out",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
         }
     }
 }
