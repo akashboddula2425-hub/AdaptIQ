@@ -55,9 +55,31 @@ Install it on a connected device with:
 
 ## Model Files
 
-The model files in `model_download/` are stored with Git LFS. They are several hundred megabytes in total, so a Git LFS installation and sufficient GitHub LFS quota are required for a complete checkout.
+The bundled model files in `model_download/` are stored with Git LFS. They are several hundred megabytes in total, so a Git LFS installation and sufficient GitHub LFS quota are required for a complete checkout.
 
-The model is based on [Qwen2.5-0.5B-Instruct](https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct) and exported to MNN format. See [model_download/README.md](model_download/README.md) for the original model download and conversion details.
+### Qwen3.5 Downloads
+
+Users can download an official Qwen3.5 model based on their available memory and performance needs. The links below provide the original Hugging Face Transformers checkpoints:
+
+| Model | Parameters | Suggested use |
+| --- | ---: | --- |
+| [Qwen3.5-0.8B](https://huggingface.co/Qwen/Qwen3.5-0.8B) | 0.8B | Small devices and quick experiments |
+| [Qwen3.5-2B](https://huggingface.co/Qwen/Qwen3.5-2B) | 2B | Lightweight local inference |
+| [Qwen3.5-4B](https://huggingface.co/Qwen/Qwen3.5-4B) | 4B | General local use |
+| [Qwen3.5-9B](https://huggingface.co/Qwen/Qwen3.5-9B) | 9B | Higher-quality local inference |
+| [Qwen3.5-27B](https://huggingface.co/Qwen/Qwen3.5-27B) | 27B | Workstations and powerful servers |
+| [Qwen3.5-35B-A3B](https://huggingface.co/Qwen/Qwen3.5-35B-A3B) | 35B total, 3B active | MoE inference on capable hardware |
+
+Download a selected model with the Hugging Face CLI:
+
+```bash
+pip install -U huggingface_hub
+huggingface-cli download Qwen/Qwen3.5-2B --local-dir model_download/qwen3.5-2B
+```
+
+Replace `Qwen/Qwen3.5-2B` with any model name from the table. The Qwen3.5 checkpoints are large and are provided in Transformers format. They are not directly compatible with AdaptIQ's current MNN runtime until they are converted to an MNN-compatible format and wired into the app. For the currently bundled MNN model and conversion details, see [model_download/README.md](model_download/README.md).
+
+Qwen3.5 models are multimodal and support text, image, and video inputs in supported inference frameworks. Check the individual model card for hardware requirements, quantized variants, and framework-specific instructions.
 
 ## Permissions
 
