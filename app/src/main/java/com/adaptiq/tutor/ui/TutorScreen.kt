@@ -324,30 +324,6 @@ private fun ModelSetupScreen(
             Text("Download More Models", fontSize = 16.sp, fontWeight = FontWeight.Bold)
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Setup instructions
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-            ),
-            shape = RoundedCornerShape(12.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    text = "📋 How to add models",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "Transfer MNN models (converted via llmexport) to:\n/sdcard/Android/data/com.adaptiq.tutor/files/models/\nor use adb to push to /data/local/tmp/adaptiq/models/",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
     }
 }
 
