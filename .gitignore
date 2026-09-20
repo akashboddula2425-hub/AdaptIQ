@@ -28,3 +28,7 @@ local.properties
 
 # Module specific rules
 app/build/
+model_download/*.bin
+model_download/*.weight
+model_download/*.mnn
+model_download/*.json
