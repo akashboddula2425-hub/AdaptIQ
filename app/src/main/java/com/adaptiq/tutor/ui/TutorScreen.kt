@@ -129,7 +129,9 @@ fun TutorScreen(
         ) { innerPadding ->
             when (uiState) {
                 is TutorUiState.ModelNotFound -> {
+                    val availableModels by viewModel.availableModels.collectAsState()
                     ModelSetupScreen(
+                        availableModels = availableModels,
                         onLoadModel = { path -> viewModel.loadModel(path) },
                         modifier = Modifier.padding(innerPadding)
                     )
@@ -234,100 +236,149 @@ fun ModuleHeaderCard() {
 // ─── Model Setup Screen ──────────────────────────────────────────────
 @Composable
 private fun ModelSetupScreen(
+    availableModels: List<com.adaptiq.tutor.viewmodel.AvailableModel>,
     onLoadModel: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var modelPath by remember {
-        mutableStateOf("/data/local/tmp/adaptiq/models/config.json")
-    }
+    var manualPath by remember { mutableStateOf("") }
+    var isManualEntry by remember { mutableStateOf(false) }
 
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
+            .padding(16.dp)
     ) {
-        // Icon
-        Icon(
-            imageVector = Icons.Default.FolderOpen,
-            contentDescription = null,
-            modifier = Modifier.size(72.dp),
-            tint = MaterialTheme.colorScheme.primary
-        )
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        Text(
-            text = "Welcome to AdaptIQ",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
-            textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Text(
-            text = "To get started, you need an MNN model on your device.\nEnter the path to your model's config file below.",
-            style = MaterialTheme.typography.bodyMedium,
-            textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        Spacer(modifier = Modifier.height(32.dp))
-
-        // Model path input
-        OutlinedTextField(
-            value = modelPath,
-            onValueChange = { modelPath = it },
-            label = { Text("Model Config Path") },
-            placeholder = { Text("/data/local/tmp/.../config.json") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            shape = RoundedCornerShape(12.dp)
-        )
-
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Load button
-        Button(
-            onClick = { onLoadModel(modelPath.trim()) },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(52.dp),
-            enabled = modelPath.isNotBlank(),
-            shape = RoundedCornerShape(12.dp)
-        ) {
-            Text("Load Model", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+        // Header
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = Icons.Default.FolderOpen,
+                contentDescription = null,
+                modifier = Modifier.size(32.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column {
+                Text(
+                    text = "Select AI Model",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "Choose a model to load into the AI Engine",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(24.dp))
+
+        // Model List
+        LazyColumn(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            items(availableModels) { model ->
+                Card(
+                    onClick = { onLoadModel(model.configPath) },
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    ),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = model.name,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 16.sp
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = model.configPath,
+                                fontSize = 10.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1
+                            )
+                        }
+                        Surface(
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text(
+                                text = model.size,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                    }
+                }
+            }
+            
+            item {
+                TextButton(
+                    onClick = { isManualEntry = !isManualEntry },
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                ) {
+                    Text("Enter custom model path instead...")
+                }
+            }
+            
+            if (isManualEntry) {
+                item {
+                    OutlinedTextField(
+                        value = manualPath,
+                        onValueChange = { manualPath = it },
+                        label = { Text("Custom config.json path") },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(
+                        onClick = { onLoadModel(manualPath.trim()) },
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                        enabled = manualPath.isNotBlank()
+                    ) {
+                        Text("Load Custom Model")
+                    }
+                }
+            }
+        }
 
         // Setup instructions
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
             ),
             shape = RoundedCornerShape(12.dp)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text(
-                    text = "📋 Quick Setup",
+                    text = "📋 How to add models",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "1. Download a Qwen2.5-1.5B MNN model\n" +
-                           "2. Push to device via ADB:\n" +
-                           "   adb push model/ /data/local/tmp/adaptiq/models/\n" +
-                           "3. Enter the config.json path above\n" +
-                           "4. Tap Load Model",
+                    text = "Transfer MNN models (converted via llmexport) to:\n" +
+                           "/sdcard/Android/data/com.adaptiq.tutor/files/models/\n" +
+                           "or use adb to push to /data/local/tmp/adaptiq/models/",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    lineHeight = 20.sp
+                    lineHeight = 16.sp
                 )
             }
         }

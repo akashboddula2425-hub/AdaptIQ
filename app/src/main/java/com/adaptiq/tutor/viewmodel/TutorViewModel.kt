@@ -48,7 +48,9 @@ class TutorViewModel(private val application: Application) : AndroidViewModel(ap
     private var currentProfile: LearnerProfile? = null
     private var generationJob: Job? = null
 
-    // ─── Initialization ──────────────────────────────────────────
+    private val _availableModels = MutableStateFlow<List<AvailableModel>>(emptyList())
+    val availableModels: StateFlow<List<AvailableModel>> = _availableModels.asStateFlow()
+
     init {
         tts = TextToSpeech(application) { status ->
             if (status == TextToSpeech.SUCCESS) {
@@ -62,6 +64,7 @@ class TutorViewModel(private val application: Application) : AndroidViewModel(ap
             }
         }
         viewModelScope.launch(Dispatchers.IO) {
+            scanForModels()
             try {
                 // Load saved profile if available
                 userPreferences.learnerProfile.first()?.let { profile ->
@@ -170,6 +173,65 @@ class TutorViewModel(private val application: Application) : AndroidViewModel(ap
     }
 
     // ─── Private Logic ───────────────────────────────────────────
+    
+    private fun scanForModels() {
+        val models = mutableListOf<AvailableModel>()
+        
+        // Scan standard paths
+        val pathsToScan = listOf(
+            java.io.File("/data/local/tmp/adaptiq/models"),
+            application.getExternalFilesDir("models")
+        )
+        
+        pathsToScan.forEach { baseDir ->
+            if (baseDir != null && baseDir.exists() && baseDir.isDirectory) {
+                // If the baseDir contains config.json, it's a model
+                val config = java.io.File(baseDir, "config.json")
+                if (config.exists()) {
+                    models.add(AvailableModel(
+                        name = baseDir.name.replace("_", " ").replace("-", " ").capitalize(),
+                        configPath = config.absolutePath,
+                        size = formatSize(getFolderSize(baseDir))
+                    ))
+                }
+                // Also check subdirectories (one level deep)
+                baseDir.listFiles()?.forEach { subDir ->
+                    if (subDir.isDirectory) {
+                        val subConfig = java.io.File(subDir, "config.json")
+                        if (subConfig.exists()) {
+                            models.add(AvailableModel(
+                                name = subDir.name.replace("_", " ").replace("-", " ").capitalize(),
+                                configPath = subConfig.absolutePath,
+                                size = formatSize(getFolderSize(subDir))
+                            ))
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Add a default entry for manual path entry if list is empty
+        if (models.isEmpty()) {
+            models.add(AvailableModel("Qwen 2.5 (Manual Path)", "/data/local/tmp/adaptiq/models/config.json", "Unknown"))
+        }
+        
+        _availableModels.value = models.distinctBy { it.configPath }
+    }
+    
+    private fun getFolderSize(folder: java.io.File): Long {
+        var length: Long = 0
+        folder.listFiles()?.forEach { file ->
+            if (file.isFile) length += file.length()
+        }
+        return length
+    }
+    
+    private fun formatSize(size: Long): String {
+        if (size <= 0) return "0 B"
+        val units = arrayOf("B", "KB", "MB", "GB", "TB")
+        val digitGroups = (Math.log10(size.toDouble()) / Math.log10(1024.0)).toInt()
+        return java.text.DecimalFormat("#,##0.#").format(size / Math.pow(1024.0, digitGroups.toDouble())) + " " + units[digitGroups]
+    }
 
     private fun handleDiagnosticResponse(text: String) {
         diagnosticManager.analyzeResponse(text)
@@ -335,6 +397,13 @@ sealed class TutorUiState(val displayName: String) {
     data object Idle : TutorUiState("Idle")
     data class Error(val message: String) : TutorUiState("Error")
 }
+
+// ─── Available Model ─────────────────────────────────────────────────
+data class AvailableModel(
+    val name: String,
+    val configPath: String,
+    val size: String
+)
 
 // ─── Chat Message Model ──────────────────────────────────────────────
 data class ChatMessage(
