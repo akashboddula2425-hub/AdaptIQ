@@ -394,7 +394,6 @@ class TutorViewModel(private val application: Application) : AndroidViewModel(ap
                     }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 // Expected when hitting stop tokens or user cancels
-                throw e
             } catch (e: Exception) {
                 _messages.update { msgs ->
                     msgs.map {
@@ -404,10 +403,10 @@ class TutorViewModel(private val application: Application) : AndroidViewModel(ap
                         else it
                     }
                 }
+            } finally {
+                _uiState.value = if (isDiagnostic) TutorUiState.DiagnosticOnboarding
+                                 else TutorUiState.Tutoring
             }
-
-            _uiState.value = if (isDiagnostic) TutorUiState.DiagnosticOnboarding
-                             else TutorUiState.Tutoring
         }
     }
 
