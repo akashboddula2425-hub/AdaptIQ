@@ -4,6 +4,9 @@ project("adaptiq_native" LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Fix 16KB page size crash on Android 15+ for all shared libraries (including MNN)
+set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-z,max-page-size=16384")
+
 # ─── MNN Source Root ──────────────────────────────────────────────────
 set(MNN_SOURCE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../../MNN")
 
