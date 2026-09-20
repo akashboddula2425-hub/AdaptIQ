@@ -1,0 +1,2 @@
+model_download/embeddings_bf16.bin filter=lfs diff=lfs merge=lfs -text
+model_download/llm.mnn.weight filter=lfs diff=lfs merge=lfs -text

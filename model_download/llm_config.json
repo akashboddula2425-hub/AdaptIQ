@@ -1,0 +1,14 @@
+{
+    "hidden_size": 896,
+    "layer_nums": 24,
+    "attention_mask": "float",
+    "key_value_shape": [
+        2,
+        1,
+        0,
+        2,
+        64
+    ],
+    "prompt_template": "<|im_start|>user\n%s<|im_end|>\n<|im_start|>assistant\n",
+    "is_visual": false
+}
