@@ -51,11 +51,7 @@ class TutorViewModel(private val application: Application) : AndroidViewModel(ap
     private val _availableModels = MutableStateFlow<List<AvailableModel>>(emptyList())
     val availableModels: StateFlow<List<AvailableModel>> = _availableModels.asStateFlow()
 
-    private val _currentQuiz = MutableStateFlow<Quiz?>(null)
-    val currentQuiz: StateFlow<Quiz?> = _currentQuiz.asStateFlow()
 
-    private val _selectedQuizOption = MutableStateFlow<Int?>(null)
-    val selectedQuizOption: StateFlow<Int?> = _selectedQuizOption.asStateFlow()
 
     init {
         tts = TextToSpeech(application) { status ->
@@ -180,22 +176,30 @@ class TutorViewModel(private val application: Application) : AndroidViewModel(ap
         _uiState.value = TutorUiState.Tutoring
     }
 
-    fun selectQuizOption(index: Int) {
-        _selectedQuizOption.value = index
+    private val _flashcards = MutableStateFlow<List<Flashcard>>(emptyList())
+    val flashcards: StateFlow<List<Flashcard>> = _flashcards.asStateFlow()
+
+    private val _currentFlashcardIndex = MutableStateFlow(0)
+    val currentFlashcardIndex: StateFlow<Int> = _currentFlashcardIndex.asStateFlow()
+
+    fun nextFlashcard() {
+        if (_currentFlashcardIndex.value < _flashcards.value.size - 1) {
+            _currentFlashcardIndex.value += 1
+        }
     }
 
-    fun generateQuiz() {
+    fun generateFlashcards() {
         if (_uiState.value == TutorUiState.InitializingModel || _uiState.value == TutorUiState.GeneratingQuiz) return
         
         generationJob?.cancel()
         generationJob = viewModelScope.launch {
             _uiState.value = TutorUiState.GeneratingQuiz
-            _currentQuiz.value = null
-            _selectedQuizOption.value = null
+            _flashcards.value = emptyList()
+            _currentFlashcardIndex.value = 0
             
-            // Build a prompt to ask for a quiz
+            // Build a prompt to ask for flashcards
             val context = _messages.value.takeLast(6).joinToString("\n") { "${it.role.name}: ${it.content}" }
-            val prompt = "<|im_start|>system\nYou are a helpful tutor. Based on the recent conversation, generate a 4-option multiple choice question to test the user's understanding.\n\nFormat EXACTLY like this (do NOT use markdown, do NOT include anything else):\nQUESTION: [your question]\nA: [option A]\nB: [option B]\nC: [option C]\nD: [option D]\nCORRECT: [A/B/C/D]\nFEEDBACK: [explanation of the correct answer]<|im_end|>\n<|im_start|>user\nRecent conversation:\n${context}\n\nPlease generate a practice quiz now.<|im_end|>\n<|im_start|>assistant\n"
+            val prompt = "<|im_start|>system\nYou are a helpful tutor. Based on the recent conversation, generate 3 study flashcards.\n\nFormat EXACTLY like this (do NOT use markdown):\nQ: [question 1]\nA: [answer 1]\n---\nQ: [question 2]\nA: [answer 2]\n---\nQ: [question 3]\nA: [answer 3]<|im_end|>\n<|im_start|>user\nRecent conversation:\n${context}\n\nPlease generate flashcards.<|im_end|>\n<|im_start|>assistant\n"
             
             try {
                 var fullText = ""
@@ -204,39 +208,29 @@ class TutorViewModel(private val application: Application) : AndroidViewModel(ap
                 }
                 
                 // Parse it manually
-                val qMatch = Regex("QUESTION:\\s*(.+)").find(fullText)
-                val aMatch = Regex("A:\\s*(.+)").find(fullText)
-                val bMatch = Regex("B:\\s*(.+)").find(fullText)
-                val cMatch = Regex("C:\\s*(.+)").find(fullText)
-                val dMatch = Regex("D:\\s*(.+)").find(fullText)
-                val correctMatch = Regex("CORRECT:\\s*([A-D])").find(fullText)
-                val feedbackMatch = Regex("FEEDBACK:\\s*(.+)").find(fullText)
+                val blocks = fullText.split("---")
+                val cards = mutableListOf<Flashcard>()
                 
-                if (qMatch != null && aMatch != null && bMatch != null && cMatch != null && dMatch != null && correctMatch != null && feedbackMatch != null) {
-                    val correctChar = correctMatch.groupValues[1].uppercase()[0]
-                    val correctIndex = correctChar - 'A'
-                    _currentQuiz.value = Quiz(
-                        question = qMatch.groupValues[1].trim(),
-                        options = listOf(aMatch.groupValues[1].trim(), bMatch.groupValues[1].trim(), cMatch.groupValues[1].trim(), dMatch.groupValues[1].trim()),
-                        correctIndex = correctIndex.coerceIn(0, 3),
-                        feedback = feedbackMatch.groupValues[1].trim()
-                    )
+                for (block in blocks) {
+                    val qMatch = Regex("Q:\\s*(.+)").find(block)
+                    val aMatch = Regex("A:\\s*(.+)").find(block)
+                    
+                    if (qMatch != null && aMatch != null) {
+                        cards.add(Flashcard(qMatch.groupValues[1].trim(), aMatch.groupValues[1].trim()))
+                    }
+                }
+                
+                if (cards.isNotEmpty()) {
+                    _flashcards.value = cards
                 } else {
-                    // Fallback
-                    _currentQuiz.value = Quiz(
-                        question = "What was the main topic we just discussed?",
-                        options = listOf("Orbital Mechanics", "Quantum Physics", "Biology", "History"),
-                        correctIndex = 0,
-                        feedback = "We have been talking about Orbital Mechanics!"
+                    _flashcards.value = listOf(
+                        Flashcard("What is Orbital Mechanics?", "The study of the motions of artificial satellites and space vehicles."),
+                        Flashcard("What is Vis-Viva?", "An equation that models the velocity of any body in an elliptic orbit.")
                     )
                 }
             } catch (e: Exception) {
-                // Fallback
-                _currentQuiz.value = Quiz(
-                    question = "Error generating quiz. What was the main topic we just discussed?",
-                    options = listOf("Orbital Mechanics", "Quantum Physics", "Biology", "History"),
-                    correctIndex = 0,
-                    feedback = "We have been talking about Orbital Mechanics!"
+                _flashcards.value = listOf(
+                    Flashcard("Error generating flashcards", "Please try again later.")
                 )
             } finally {
                 _uiState.value = TutorUiState.Tutoring
@@ -482,11 +476,9 @@ sealed class TutorUiState(val displayName: String) {
 }
 
 // ─── Quiz Model ──────────────────────────────────────────────────────
-data class Quiz(
-    val question: String,
-    val options: List<String>,
-    val correctIndex: Int,
-    val feedback: String
+data class Flashcard(
+    val front: String,
+    val back: String
 )
 
 // ─── Available Model ─────────────────────────────────────────────────

@@ -105,8 +105,10 @@ fun MainScreen(viewModel: TutorViewModel) {
                 .padding(innerPadding)
         ) {
             when (selectedTab) {
+                NavigationTab.ONBOARD -> OnboardScreen()
                 NavigationTab.TUTOR -> TutorScreen(viewModel = viewModel, isEmbedded = true)
                 NavigationTab.PRACTICE -> PracticeScreen(viewModel = viewModel)
+                NavigationTab.PODS -> PodsScreen()
                 else -> PlaceholderScreen(tab = selectedTab)
             }
         }
