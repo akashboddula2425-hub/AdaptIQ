@@ -1,6 +1,7 @@
 package com.adaptiq.tutor.engine
 
 import android.content.Context
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -19,17 +20,54 @@ data class DownloadProgress(
 )
 
 class ModelDownloader(private val context: Context) {
+    companion object {
+        private const val TAG = "ModelDownloader"
+    }
+
     private val _downloadState = MutableStateFlow<Map<String, DownloadProgress>>(emptyMap())
     val downloadState: StateFlow<Map<String, DownloadProgress>> = _downloadState.asStateFlow()
 
-    // We will use 0x3's HF repos as placeholders for the MNN files
-    // If a specific file is 404, we just skip it (some models don't have .weight files)
-    private val requiredFiles = listOf(
+    // Required files for MNN model execution
+    private val candidateFiles = listOf(
         "config.json",
         "llm.mnn",
         "llm.mnn.weight",
         "tokenizer.txt"
     )
+
+    private fun openConnectionWithRedirects(initialUrl: String, method: String = "GET"): HttpURLConnection {
+        var currentUrl = initialUrl
+        var redirects = 0
+        while (redirects < 10) {
+            val urlObj = URL(currentUrl)
+            val conn = urlObj.openConnection() as HttpURLConnection
+            conn.requestMethod = method
+            conn.connectTimeout = 15000
+            conn.readTimeout = 30000
+            conn.instanceFollowRedirects = true
+            conn.setRequestProperty("User-Agent", "AdaptIQ-Android/1.0")
+
+            val responseCode = conn.responseCode
+            if (responseCode == HttpURLConnection.HTTP_MOVED_PERM ||
+                responseCode == HttpURLConnection.HTTP_MOVED_TEMP ||
+                responseCode == HttpURLConnection.HTTP_SEE_OTHER ||
+                responseCode == 307 || responseCode == 308) {
+                val newLocation = conn.getHeaderField("Location")
+                conn.disconnect()
+                if (!newLocation.isNullOrBlank()) {
+                    currentUrl = if (newLocation.startsWith("http")) {
+                        newLocation
+                    } else {
+                        URL(urlObj, newLocation).toString()
+                    }
+                    redirects++
+                    continue
+                }
+            }
+            return conn
+        }
+        return URL(currentUrl).openConnection() as HttpURLConnection
+    }
 
     suspend fun downloadModel(modelId: String, repoId: String) {
         withContext(Dispatchers.IO) {
@@ -39,90 +77,98 @@ class ModelDownloader(private val context: Context) {
             }
 
             _downloadState.value = _downloadState.value.toMutableMap().apply {
-                this[modelId] = DownloadProgress(modelId, 0f, true)
+                this[modelId] = DownloadProgress(modelId, 0.05f, true)
             }
 
             try {
-                // First get the total size for all files to calculate accurate progress
-                var totalBytesToDownload = 0L
-                var totalBytesDownloaded = 0L
+                // Discover which files exist in the repository
+                val filesToDownload = mutableListOf<Pair<String, Long>>()
+                var totalBytes = 0L
 
-                val validFiles = mutableListOf<Pair<String, Long>>()
+                for (fileName in candidateFiles) {
+                    val rawUrl = "https://huggingface.co/$repoId/resolve/main/$fileName"
+                    try {
+                        val headConn = openConnectionWithRedirects(rawUrl, "HEAD")
+                        val code = headConn.responseCode
+                        val length = headConn.contentLengthLong
+                        headConn.disconnect()
 
-                for (fileName in requiredFiles) {
-                    val url = URL("https://huggingface.co/$repoId/resolve/main/$fileName")
-                    val conn = url.openConnection() as HttpURLConnection
-                    conn.requestMethod = "HEAD"
-                    conn.connectTimeout = 5000
-                    
-                    if (conn.responseCode == HttpURLConnection.HTTP_OK) {
-                        val size = conn.contentLength.toLong()
-                        if (size > 0) {
-                            validFiles.add(Pair(fileName, size))
-                            totalBytesToDownload += size
+                        if (code in 200..299) {
+                            val validLength = if (length > 0) length else 1024L * 1024L
+                            filesToDownload.add(Pair(fileName, validLength))
+                            totalBytes += validLength
+                            Log.i(TAG, "Found file: $fileName (${validLength} bytes)")
+                        } else {
+                            Log.w(TAG, "File $fileName not available (HTTP $code)")
                         }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed checking $fileName: ${e.message}")
                     }
-                    conn.disconnect()
                 }
 
-                if (validFiles.isEmpty()) {
-                    throw Exception("No model files found in repository")
+                if (filesToDownload.none { it.first == "config.json" }) {
+                    throw Exception("Repository $repoId does not contain config.json")
                 }
 
-                // Download each file
-                for ((fileName, _) in validFiles) {
-                    val url = URL("https://huggingface.co/$repoId/resolve/main/$fileName")
-                    val conn = url.openConnection() as HttpURLConnection
-                    conn.connectTimeout = 10000
-                    conn.readTimeout = 30000
-                    
-                    if (conn.responseCode != HttpURLConnection.HTTP_OK) {
-                        continue // Skip if suddenly unavailable
+                var bytesDownloaded = 0L
+
+                for ((fileName, expectedLength) in filesToDownload) {
+                    val rawUrl = "https://huggingface.co/$repoId/resolve/main/$fileName"
+                    val conn = openConnectionWithRedirects(rawUrl, "GET")
+                    val code = conn.responseCode
+                    if (code !in 200..299) {
+                        conn.disconnect()
+                        continue
                     }
-                    
-                    val file = File(modelDir, fileName)
+
+                    val targetFile = File(modelDir, fileName)
                     val inputStream = conn.inputStream
-                    val outputStream = FileOutputStream(file)
-                    
-                    val buffer = ByteArray(8192)
+                    val outputStream = FileOutputStream(targetFile)
+
+                    val buffer = ByteArray(32768)
                     var bytesRead: Int
-                    
+
                     while (inputStream.read(buffer).also { bytesRead = it } != -1) {
                         outputStream.write(buffer, 0, bytesRead)
-                        totalBytesDownloaded += bytesRead
-                        
-                        val progress = if (totalBytesToDownload > 0) {
-                            totalBytesDownloaded.toFloat() / totalBytesToDownload.toFloat()
+                        bytesDownloaded += bytesRead
+
+                        val calculatedProgress = if (totalBytes > 0) {
+                            (bytesDownloaded.toFloat() / totalBytes.toFloat()).coerceIn(0.05f, 0.99f)
                         } else {
-                            0f
+                            0.5f
                         }
-                        
+
                         _downloadState.value = _downloadState.value.toMutableMap().apply {
-                            this[modelId] = DownloadProgress(modelId, progress, true)
+                            this[modelId] = DownloadProgress(modelId, calculatedProgress, true)
                         }
                     }
-                    
+
                     outputStream.flush()
                     outputStream.close()
                     inputStream.close()
                     conn.disconnect()
                 }
 
+                // Verify minimal requirements: config.json must exist
+                val config = File(modelDir, "config.json")
+                if (!config.exists() || config.length() == 0L) {
+                    throw Exception("Download incomplete: config.json missing or empty")
+                }
+
                 _downloadState.value = _downloadState.value.toMutableMap().apply {
                     this[modelId] = DownloadProgress(modelId, 1f, false)
                 }
+                Log.i(TAG, "Model $modelId downloaded successfully")
             } catch (e: Exception) {
-                e.printStackTrace()
+                Log.e(TAG, "Download failed for $modelId", e)
                 _downloadState.value = _downloadState.value.toMutableMap().apply {
                     this[modelId] = DownloadProgress(modelId, 0f, false, e.message ?: "Download failed")
                 }
-                
-                // Cleanup partial downloads
                 modelDir.deleteRecursively()
             }
         }
     }
-    
+
     fun deleteModel(modelId: String) {
         val modelDir = File(context.getExternalFilesDir("models"), modelId)
         if (modelDir.exists()) {
@@ -132,10 +178,10 @@ class ModelDownloader(private val context: Context) {
             this.remove(modelId)
         }
     }
-    
+
     fun isModelDownloaded(modelId: String): Boolean {
         val modelDir = File(context.getExternalFilesDir("models"), modelId)
         val config = File(modelDir, "config.json")
-        return modelDir.exists() && config.exists()
+        return modelDir.exists() && config.exists() && config.length() > 0
     }
 }

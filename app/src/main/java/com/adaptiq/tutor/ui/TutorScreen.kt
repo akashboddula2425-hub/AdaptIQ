@@ -54,7 +54,11 @@ fun TutorScreen(
     // Auto-scroll to bottom when new messages arrive
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
-            listState.animateScrollToItem(messages.size - 1)
+            try {
+                listState.animateScrollToItem(messages.size - 1)
+            } catch (e: Exception) {
+                // Ignore if LazyListState is not attached
+            }
         }
     }
 
@@ -126,7 +130,9 @@ fun TutorScreen(
                                 inputText = ""
                                 coroutineScope.launch {
                                     if (messages.isNotEmpty()) {
-                                        listState.animateScrollToItem(messages.size - 1)
+                                        try {
+                                            listState.animateScrollToItem(messages.size - 1)
+                                        } catch (e: Exception) {}
                                     }
                                 }
                             }
@@ -170,10 +176,12 @@ fun TutorScreen(
                         }
 
                         items(messages, key = { it.id }) { message ->
-                            ChatBubble(
-                                message = message,
-                                onReadAloud = { viewModel.speakMessage(message.content) }
-                            )
+                            if (message.content.isNotBlank()) {
+                                ChatBubble(
+                                    message = message,
+                                    onReadAloud = { viewModel.speakMessage(message.content) }
+                                )
+                            }
                         }
 
                         // Typing indicator when generating
@@ -295,6 +303,10 @@ private fun ModelSetupScreen(
                                 } else if (progress?.isDownloading != true) {
                                     coroutineScope.launch {
                                         viewModel.modelDownloader.downloadModel(model.id, model.repoId)
+                                        if (viewModel.modelDownloader.isModelDownloaded(model.id)) {
+                                            val configPath = java.io.File(context.getExternalFilesDir("models"), "${model.id}/config.json").absolutePath
+                                            viewModel.loadModel(configPath)
+                                        }
                                     }
                                 }
                             },
@@ -304,7 +316,7 @@ private fun ModelSetupScreen(
                             contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp)
                         ) {
                             Text(
-                                text = if (isDownloaded) "Use" else if (progress?.isDownloading == true) "${(progress.progress * 100).toInt()}%" else "Use",
+                                text = if (isDownloaded) "Use" else if (progress?.isDownloading == true) "${(progress.progress * 100).toInt()}%" else "Download",
                                 color = Color.White,
                                 fontWeight = FontWeight.Bold
                             )
@@ -466,7 +478,7 @@ private fun ChatBubble(
                     fontSize = 16.sp
                 )
             }
-            if (!isUser) {
+            if (!isUser && message.content.isNotBlank()) {
                 Row(
                     modifier = Modifier.padding(top = 4.dp, start = 8.dp),
                     verticalAlignment = Alignment.CenterVertically

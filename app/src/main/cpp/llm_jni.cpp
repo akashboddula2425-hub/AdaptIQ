@@ -137,7 +137,13 @@ Java_com_adaptiq_tutor_engine_MnnBridge_nativeCreateLLM(
         }
 
         // Load model weights into memory
-        g_llm->load();
+        if (!g_llm->load()) {
+            LOGE("nativeCreateLLM: g_llm->load() failed for: %s", path);
+            Llm::destroy(g_llm);
+            g_llm = nullptr;
+            env->ReleaseStringUTFChars(configPath, path);
+            return JNI_FALSE;
+        }
 
         LOGI("nativeCreateLLM: Model loaded successfully");
         env->ReleaseStringUTFChars(configPath, path);
@@ -249,10 +255,27 @@ Java_com_adaptiq_tutor_engine_MnnBridge_nativeGenerateStream(
         });
 
         // Wrap the streambuf in a std::ostream and pass to MNN
-        std::ostream tokenStream(&streamBuf);
         // Encode the raw prompt and pass input_ids to bypass MNN's prompt_template
         std::vector<int> inputIds = g_llm->tokenizer_encode(promptCpp);
-        g_llm->response(inputIds, &tokenStream, "<|im_end|>");
+        if (inputIds.empty()) {
+            LOGE("nativeGenerateStream: inputIds is empty for prompt length %zu", promptCpp.size());
+            bool didAttach = false;
+            JNIEnv* cbEnv = getEnv(&didAttach);
+            if (cbEnv) {
+                jstring jErr = cbEnv->NewStringUTF("Failed to tokenize prompt");
+                if (jErr) {
+                    cbEnv->CallVoidMethod(callbackRef, onErrorMethod, jErr);
+                    cbEnv->DeleteLocalRef(jErr);
+                }
+            }
+            detachIfNeeded(didAttach);
+            env->DeleteGlobalRef(callbackRef);
+            g_is_generating.store(false);
+            return;
+        }
+
+        std::ostream tokenStream(&streamBuf);
+        g_llm->response(inputIds, &tokenStream);
         // ──────────────────────────────────────────────────────────────
 
         // Signal completion with the full assembled response

@@ -95,10 +95,12 @@ class TutorViewModel(private val application: Application) : AndroidViewModel(ap
                     currentProfile = profile
                 }
 
-                // Load model from saved path
-                userPreferences.modelPath.first()?.let { path ->
-                    loadModel(path)
-                } ?: run {
+                // Load model from saved path only if the file actually exists
+                val savedPath = userPreferences.modelPath.first()
+                if (!savedPath.isNullOrBlank() && File(savedPath).exists() && File(savedPath).length() > 0) {
+                    loadModel(savedPath)
+                } else {
+                    userPreferences.setModelPath("")
                     _uiState.value = TutorUiState.ModelNotFound
                 }
             } catch (e: Exception) {
@@ -128,13 +130,26 @@ class TutorViewModel(private val application: Application) : AndroidViewModel(ap
             return
         }
 
+        val configFile = File(configPath)
+        if (!configFile.exists() || configFile.length() == 0L) {
+            viewModelScope.launch {
+                userPreferences.setModelPath("")
+                _uiState.value = TutorUiState.ModelNotFound
+            }
+            return
+        }
+
         viewModelScope.launch {
             _uiState.value = TutorUiState.InitializingModel
             try {
-                mnnBridge.loadModel(configPath)
+                val success = mnnBridge.loadModel(configPath)
+                if (!success) {
+                    throw ModelLoadException("Engine returned false when loading model from $configPath")
+                }
                 // Configure the LLM to prevent infinite loops and limit length
-                mnnBridge.setConfig("{\"max_new_tokens\": 150, \"temperature\": 0.7, \"repetition_penalty\": 1.1}")
+                mnnBridge.setConfig("{\"max_new_tokens\": 250, \"temperature\": 0.7, \"repetition_penalty\": 1.1}")
                 userPreferences.setModelPath(configPath)
+                scanForModels()
 
                 // Check if onboarding is needed
                 val isOnboarded = userPreferences.isOnboardingComplete.first()
@@ -396,11 +411,6 @@ class TutorViewModel(private val application: Application) : AndroidViewModel(ap
             }
         }
         
-        // Add a default entry for manual path entry if list is empty
-        if (models.isEmpty()) {
-            models.add(AvailableModel("Qwen 2.5 (Manual Path)", "/data/local/tmp/adaptiq/models/config.json", "Unknown"))
-        }
-        
         _availableModels.value = models.distinctBy { it.configPath }
     }
     
@@ -457,6 +467,16 @@ class TutorViewModel(private val application: Application) : AndroidViewModel(ap
         generationJob = viewModelScope.launch {
             _uiState.value = TutorUiState.GeneratingResponse
 
+            val responseId = UUID.randomUUID().toString()
+
+            // Guard: Check if a model is actually loaded in native memory
+            if (!mnnBridge.isLoaded) {
+                val notLoadedMessage = "⚠️ No AI model is currently loaded on your device.\n\nPlease tap the Settings ⚙️ icon in the top right corner to download and select an on-device Qwen 3.5 model."
+                _messages.update { it + ChatMessage(id = responseId, role = MessageRole.ASSISTANT, content = notLoadedMessage) }
+                _uiState.value = if (isDiagnostic) TutorUiState.DiagnosticOnboarding else TutorUiState.Tutoring
+                return@launch
+            }
+
             // Build the system prompt based on current mode
             val systemPrompt = if (isDiagnostic) {
                 diagnosticManager.getNextDiagnosticPrompt() ?: ""
@@ -468,7 +488,6 @@ class TutorViewModel(private val application: Application) : AndroidViewModel(ap
             val rawPrompt = buildRawPrompt(systemPrompt)
 
             // Create a placeholder message for streaming
-            val responseId = UUID.randomUUID().toString()
             val responseMessage = ChatMessage(
                 id = responseId,
                 role = MessageRole.ASSISTANT,
@@ -510,12 +529,20 @@ class TutorViewModel(private val application: Application) : AndroidViewModel(ap
                 _messages.update { msgs ->
                     msgs.map {
                         if (it.id == responseId) it.copy(
-                            content = it.content.ifEmpty { "I encountered an issue. Please try again." }
+                            content = it.content.ifEmpty { "I encountered an issue generating a response. Please check model status in Settings ⚙️." }
                         )
                         else it
                     }
                 }
             } finally {
+                // Ensure the assistant message is never left completely blank
+                _messages.update { msgs ->
+                    msgs.map {
+                        if (it.id == responseId && it.content.isBlank()) {
+                            it.copy(content = "I didn't receive any tokens from the model. Please check model status in Settings ⚙️ or try asking again.")
+                        } else it
+                    }
+                }
                 _uiState.value = if (isDiagnostic) TutorUiState.DiagnosticOnboarding
                                  else TutorUiState.Tutoring
             }
