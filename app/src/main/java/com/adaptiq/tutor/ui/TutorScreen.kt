@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -257,9 +258,9 @@ private fun ModelSetupScreen(
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = model.configPath,
-                                fontSize = 10.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                text = "On Device",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.primary,
                                 maxLines = 1
                             )
                         }
@@ -310,6 +311,21 @@ private fun ModelSetupScreen(
             }
         }
 
+        val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+        
+        Button(
+            onClick = { uriHandler.openUri("https://huggingface.co/models") },
+            modifier = Modifier.fillMaxWidth().height(56.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(20.dp))
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Download More Models", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
         // Setup instructions
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -326,12 +342,9 @@ private fun ModelSetupScreen(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Transfer MNN models (converted via llmexport) to:\n" +
-                           "/sdcard/Android/data/com.adaptiq.tutor/files/models/\n" +
-                           "or use adb to push to /data/local/tmp/adaptiq/models/",
+                    text = "Transfer MNN models (converted via llmexport) to:\n/sdcard/Android/data/com.adaptiq.tutor/files/models/\nor use adb to push to /data/local/tmp/adaptiq/models/",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    lineHeight = 16.sp
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
