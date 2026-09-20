@@ -18,6 +18,11 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.util.UUID
+import java.io.File
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.json.Json
 
 /**
  * TutorViewModel orchestrates the interaction between the UI, inference engine,
@@ -34,6 +39,7 @@ class TutorViewModel(private val application: Application) : AndroidViewModel(ap
     private val diagnosticManager = AdaptiveDiagnosticManager()
     private val knowledgeGapTracker = KnowledgeGapTracker(database.knowledgeGapDao())
     private var tts: TextToSpeech? = null
+    private val historyFile = File(application.filesDir, "chat_history.json")
 
     // ─── State ───────────────────────────────────────────────────
     private val _uiState = MutableStateFlow<TutorUiState>(TutorUiState.InitializingModel)
@@ -65,7 +71,13 @@ class TutorViewModel(private val application: Application) : AndroidViewModel(ap
                 })
             }
         }
+        viewModelScope.launch {
+            _messages.drop(1).collect {
+                saveHistory()
+            }
+        }
         viewModelScope.launch(Dispatchers.IO) {
+            loadHistory()
             scanForModels()
             try {
                 // Load saved profile if available
@@ -178,6 +190,12 @@ class TutorViewModel(private val application: Application) : AndroidViewModel(ap
 
     private val _flashcards = MutableStateFlow<List<Flashcard>>(emptyList())
     val flashcards: StateFlow<List<Flashcard>> = _flashcards.asStateFlow()
+    
+    private val _quiz = MutableStateFlow<Quiz?>(null)
+    val quiz: StateFlow<Quiz?> = _quiz.asStateFlow()
+    
+    private val _matchingGame = MutableStateFlow<MatchingGame?>(null)
+    val matchingGame: StateFlow<MatchingGame?> = _matchingGame.asStateFlow()
 
     private val _currentFlashcardIndex = MutableStateFlow(0)
     val currentFlashcardIndex: StateFlow<Int> = _currentFlashcardIndex.asStateFlow()
@@ -232,6 +250,90 @@ class TutorViewModel(private val application: Application) : AndroidViewModel(ap
                 _flashcards.value = listOf(
                     Flashcard("Error generating flashcards", "Please try again later.")
                 )
+            } finally {
+                _uiState.value = TutorUiState.Tutoring
+            }
+        }
+    }
+    
+    fun generateQuiz() {
+        if (_uiState.value == TutorUiState.InitializingModel || _uiState.value == TutorUiState.GeneratingQuiz) return
+        
+        generationJob?.cancel()
+        generationJob = viewModelScope.launch {
+            _uiState.value = TutorUiState.GeneratingQuiz
+            _quiz.value = null
+            
+            val context = _messages.value.takeLast(6).joinToString("\n") { "${it.role.name}: ${it.content}" }
+            val prompt = "<|im_start|>system\nYou are a helpful tutor. Based on the recent conversation, generate 1 multiple choice question.\n\nFormat EXACTLY like this (no markdown):\nQ: [question]\n1. [option 1]\n2. [option 2]\n3. [option 3]\n4. [option 4]\nA: [correct index 1-4]<|im_end|>\n<|im_start|>user\nRecent conversation:\n${context}\n\nPlease generate a question.<|im_end|>\n<|im_start|>assistant\n"
+            
+            try {
+                var fullText = ""
+                mnnBridge.generateStream(prompt).collect { chunk ->
+                    fullText = chunk
+                }
+                
+                val qMatch = Regex("Q:\\s*(.+)").find(fullText)
+                val options = mutableListOf<String>()
+                for (i in 1..4) {
+                    val oMatch = Regex("$i\\.\\s*(.+)").find(fullText)
+                    if (oMatch != null) options.add(oMatch.groupValues[1].trim())
+                }
+                val aMatch = Regex("A:\\s*([1-4])").find(fullText)
+                
+                if (qMatch != null && options.size == 4 && aMatch != null) {
+                    val correctIdx = aMatch.groupValues[1].toInt() - 1
+                    _quiz.value = Quiz(qMatch.groupValues[1].trim(), options, correctIdx)
+                } else {
+                    _quiz.value = Quiz("What is the capital of France?", listOf("Berlin", "Madrid", "Paris", "Rome"), 2)
+                }
+            } catch (e: Exception) {
+                _quiz.value = Quiz("Error generating quiz", listOf("A", "B", "C", "D"), 0)
+            } finally {
+                _uiState.value = TutorUiState.Tutoring
+            }
+        }
+    }
+    
+    fun generateMatchingGame() {
+        if (_uiState.value == TutorUiState.InitializingModel || _uiState.value == TutorUiState.GeneratingQuiz) return
+        
+        generationJob?.cancel()
+        generationJob = viewModelScope.launch {
+            _uiState.value = TutorUiState.GeneratingQuiz
+            _matchingGame.value = null
+            
+            val context = _messages.value.takeLast(6).joinToString("\n") { "${it.role.name}: ${it.content}" }
+            val prompt = "<|im_start|>system\nYou are a helpful tutor. Based on the recent conversation, generate 4 pairs for a matching game.\n\nFormat EXACTLY like this (no markdown):\n1. [Term 1] | [Definition 1]\n2. [Term 2] | [Definition 2]\n3. [Term 3] | [Definition 3]\n4. [Term 4] | [Definition 4]<|im_end|>\n<|im_start|>user\nRecent conversation:\n${context}\n\nPlease generate matching pairs.<|im_end|>\n<|im_start|>assistant\n"
+            
+            try {
+                var fullText = ""
+                mnnBridge.generateStream(prompt).collect { chunk ->
+                    fullText = chunk
+                }
+                
+                val pairs = mutableListOf<MatchingPair>()
+                for (i in 1..4) {
+                    val pMatch = Regex("$i\\.\\s*(.+?)\\s*\\|\\s*(.+)").find(fullText)
+                    if (pMatch != null) {
+                        pairs.add(MatchingPair(pMatch.groupValues[1].trim(), pMatch.groupValues[2].trim()))
+                    }
+                }
+                
+                if (pairs.size >= 2) {
+                    _matchingGame.value = MatchingGame(pairs)
+                } else {
+                    _matchingGame.value = MatchingGame(listOf(
+                        MatchingPair("Apple", "A red fruit"),
+                        MatchingPair("Dog", "Man's best friend"),
+                        MatchingPair("Car", "A vehicle with four wheels")
+                    ))
+                }
+            } catch (e: Exception) {
+                _matchingGame.value = MatchingGame(listOf(
+                    MatchingPair("Error", "Could not generate"),
+                    MatchingPair("Try", "Again later")
+                ))
             } finally {
                 _uiState.value = TutorUiState.Tutoring
             }
@@ -454,6 +556,29 @@ class TutorViewModel(private val application: Application) : AndroidViewModel(ap
         )
         _messages.update { it + message }
     }
+    
+    private fun saveHistory() {
+        try {
+            val json = Json.encodeToString(_messages.value)
+            historyFile.writeText(json)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+    
+    private suspend fun loadHistory() {
+        try {
+            if (historyFile.exists()) {
+                val json = historyFile.readText()
+                val savedMessages = Json.decodeFromString<List<ChatMessage>>(json)
+                if (savedMessages.isNotEmpty()) {
+                    _messages.value = savedMessages
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
 
     override fun onCleared() {
         super.onCleared()
@@ -474,10 +599,25 @@ sealed class TutorUiState(val displayName: String) {
     data class Error(val message: String) : TutorUiState("Error")
 }
 
-// ─── Quiz Model ──────────────────────────────────────────────────────
+// ─── Practice Lab Models ────────────────────────────────────────────────────────
 data class Flashcard(
     val front: String,
     val back: String
+)
+
+data class Quiz(
+    val question: String,
+    val options: List<String>,
+    val correctIndex: Int
+)
+
+data class MatchingGame(
+    val pairs: List<MatchingPair>
+)
+
+data class MatchingPair(
+    val term: String,
+    val definition: String
 )
 
 // ─── Available Model ─────────────────────────────────────────────────
@@ -487,7 +627,8 @@ data class AvailableModel(
     val size: String
 )
 
-// ─── Chat Message Model ──────────────────────────────────────────────
+// ─── Chat Message Model ──────────────────────────────────────────────────────
+@Serializable
 data class ChatMessage(
     val id: String,
     val role: MessageRole,
@@ -495,6 +636,7 @@ data class ChatMessage(
     val timestamp: Long = System.currentTimeMillis()
 )
 
+@Serializable
 enum class MessageRole {
     USER, ASSISTANT, SYSTEM
 }
