@@ -19,12 +19,14 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.background
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -140,10 +142,8 @@ fun TutorScreen(
         ) { innerPadding ->
             when (uiState) {
                 is TutorUiState.ModelNotFound -> {
-                    val availableModels by viewModel.availableModels.collectAsState()
                     ModelSetupScreen(
-                        availableModels = availableModels,
-                        onLoadModel = { path -> viewModel.loadModel(path) },
+                        viewModel = viewModel,
                         modifier = Modifier.padding(innerPadding)
                     )
                 }
@@ -190,140 +190,129 @@ fun TutorScreen(
 // ─── Model Setup Screen ──────────────────────────────────────────────
 @Composable
 private fun ModelSetupScreen(
-    availableModels: List<com.adaptiq.tutor.viewmodel.AvailableModel>,
-    onLoadModel: (String) -> Unit,
+    viewModel: TutorViewModel,
     modifier: Modifier = Modifier
 ) {
-    var manualPath by remember { mutableStateOf("") }
-    var isManualEntry by remember { mutableStateOf(false) }
+    val downloadState by viewModel.modelDownloader.downloadState.collectAsState()
+    val availableModels by viewModel.availableModels.collectAsState()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+
+    // Dark theme for model selection
+    val darkBackground = Color(0xFF121212)
+    val cardBackground = Color(0xFF1E1E1E)
+    val blueButton = Color(0xFF4A90E2)
 
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(16.dp)
+            .background(darkBackground)
+            .padding(24.dp)
     ) {
         Spacer(modifier = Modifier.height(16.dp))
+        
+        Text(
+            text = "Model",
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold,
+            color = Color.White
+        )
+        
+        Spacer(modifier = Modifier.height(8.dp))
+        
+        Text(
+            text = "Runs entirely on this device. Download once; it works offline after that.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = Color.Gray
+        )
+        
+        Spacer(modifier = Modifier.height(32.dp))
 
-        // Header
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                imageVector = Icons.Default.FolderOpen,
-                contentDescription = null,
-                modifier = Modifier.size(32.dp),
-                tint = MaterialTheme.colorScheme.primary
-            )
-            Spacer(modifier = Modifier.width(12.dp))
-            Column {
-                Text(
-                    text = "Select AI Model",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = "Choose a model to load into the AI Engine",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        // Model List
         LazyColumn(
             modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            items(availableModels) { model ->
-                Card(
-                    onClick = { onLoadModel(model.configPath) },
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                    ),
-                    shape = RoundedCornerShape(16.dp)
+            items(viewModel.downloadableModels) { model ->
+                val progress = downloadState[model.id]
+                val isDownloaded = viewModel.modelDownloader.isModelDownloaded(model.id)
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = model.name,
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 16.sp
+                    Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
+                        Text(
+                            text = model.name,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 16.sp,
+                            color = Color.White
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = model.description,
+                            fontSize = 12.sp,
+                            color = Color.Gray,
+                            lineHeight = 16.sp
+                        )
+                        
+                        if (progress?.isDownloading == true) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            LinearProgressIndicator(
+                                progress = progress.progress,
+                                modifier = Modifier.fillMaxWidth().height(4.dp),
+                                color = blueButton,
+                                trackColor = Color.DarkGray
                             )
+                        } else if (progress?.error != null) {
                             Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "On Device",
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.primary,
-                                maxLines = 1
-                            )
+                            Text("Error: ${progress.error}", color = Color.Red, fontSize = 12.sp)
                         }
-                        Surface(
-                            color = MaterialTheme.colorScheme.primaryContainer,
-                            shape = RoundedCornerShape(8.dp)
+                    }
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (isDownloaded && progress?.isDownloading != true) {
+                            IconButton(
+                                onClick = { viewModel.modelDownloader.deleteModel(model.id) },
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = "Delete",
+                                    tint = Color.Gray,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        Button(
+                            onClick = {
+                                if (isDownloaded) {
+                                    val configPath = java.io.File(context.getExternalFilesDir("models"), "${model.id}/config.json").absolutePath
+                                    viewModel.loadModel(configPath)
+                                } else if (progress?.isDownloading != true) {
+                                    coroutineScope.launch {
+                                        viewModel.modelDownloader.downloadModel(model.id, model.repoId)
+                                    }
+                                }
+                            },
+                            enabled = progress?.isDownloading != true,
+                            colors = ButtonDefaults.buttonColors(containerColor = blueButton),
+                            shape = CircleShape,
+                            contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp)
                         ) {
                             Text(
-                                text = model.size,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                                text = if (isDownloaded) "Use" else if (progress?.isDownloading == true) "${(progress.progress * 100).toInt()}%" else "Use",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold
                             )
                         }
                     }
                 }
             }
-            
-            item {
-                TextButton(
-                    onClick = { isManualEntry = !isManualEntry },
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-                ) {
-                    Text("Enter custom model path instead...")
-                }
-            }
-            
-            if (isManualEntry) {
-                item {
-                    OutlinedTextField(
-                        value = manualPath,
-                        onValueChange = { manualPath = it },
-                        label = { Text("Custom config.json path") },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        singleLine = true
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Button(
-                        onClick = { onLoadModel(manualPath.trim()) },
-                        modifier = Modifier.fillMaxWidth().height(48.dp),
-                        enabled = manualPath.isNotBlank()
-                    ) {
-                        Text("Load Custom Model")
-                    }
-                }
-            }
         }
-
-        val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
-        
-        Button(
-            onClick = { uriHandler.openUri("https://huggingface.co/models") },
-            modifier = Modifier.fillMaxWidth().height(56.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-            shape = RoundedCornerShape(16.dp)
-        ) {
-            Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(20.dp))
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("Download More Models", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-        }
-
     }
 }
 

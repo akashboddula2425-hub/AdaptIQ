@@ -23,6 +23,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
+import com.adaptiq.tutor.engine.ModelDownloader
 
 /**
  * TutorViewModel orchestrates the interaction between the UI, inference engine,
@@ -32,7 +33,7 @@ import kotlinx.serialization.json.Json
  */
 class TutorViewModel(private val application: Application) : AndroidViewModel(application) {
 
-    // ─── Dependencies ────────────────────────────────────────────
+    // ─── Dependencies ──────────────────────────────────────────────────────────
     private val mnnBridge = MnnBridge()
     private val userPreferences = UserPreferences(application)
     private val database = AdaptIQDatabase.getInstance(application)
@@ -40,6 +41,15 @@ class TutorViewModel(private val application: Application) : AndroidViewModel(ap
     private val knowledgeGapTracker = KnowledgeGapTracker(database.knowledgeGapDao())
     private var tts: TextToSpeech? = null
     private val historyFile = File(application.filesDir, "chat_history.json")
+    val modelDownloader = ModelDownloader(application)
+
+    // ─── Predefined Downloadable Models ────────────────────────────────────────
+    val downloadableModels = listOf(
+        DownloadableModel("qwen3.5-2b", "Qwen 3.5 · 2B", "Fastest. Fits comfortably alongside the dev server.", "0x3/Qwen3.5-2B-MNN"),
+        DownloadableModel("qwen3.5-4b", "Qwen 3.5 · 4B", "Better code, fewer malformed tool calls. Needs ~3 GB free.", "0x3/Qwen3.5-4B-MNN"),
+        DownloadableModel("qwen3.5-9b", "Qwen 3.5 · 9B", "Excellent reasoning. Needs ~7 GB free.", "hb-dev/Qwen3.5-9B-MNN"),
+        DownloadableModel("qwen3.5-27b", "Qwen 3.5 · 27B", "Desktop-class performance. Needs ~16 GB free.", "0x3/Qwen3.5-27B-MNN")
+    )
 
     // ─── State ───────────────────────────────────────────────────
     private val _uiState = MutableStateFlow<TutorUiState>(TutorUiState.InitializingModel)
@@ -620,11 +630,18 @@ data class MatchingPair(
     val definition: String
 )
 
-// ─── Available Model ─────────────────────────────────────────────────
+// ─── Available Model ──────────────────────────────────────────────────────────
 data class AvailableModel(
     val name: String,
     val configPath: String,
     val size: String
+)
+
+data class DownloadableModel(
+    val id: String,
+    val name: String,
+    val description: String,
+    val repoId: String
 )
 
 // ─── Chat Message Model ──────────────────────────────────────────────────────
