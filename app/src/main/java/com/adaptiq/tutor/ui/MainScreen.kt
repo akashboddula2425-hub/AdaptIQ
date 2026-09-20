@@ -106,7 +106,7 @@ fun MainScreen(viewModel: TutorViewModel) {
         ) {
             when (selectedTab) {
                 NavigationTab.TUTOR -> TutorScreen(viewModel = viewModel, isEmbedded = true)
-                NavigationTab.PRACTICE -> PracticeScreen()
+                NavigationTab.PRACTICE -> PracticeScreen(viewModel = viewModel)
                 else -> PlaceholderScreen(tab = selectedTab)
             }
         }

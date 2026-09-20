@@ -51,6 +51,12 @@ class TutorViewModel(private val application: Application) : AndroidViewModel(ap
     private val _availableModels = MutableStateFlow<List<AvailableModel>>(emptyList())
     val availableModels: StateFlow<List<AvailableModel>> = _availableModels.asStateFlow()
 
+    private val _currentQuiz = MutableStateFlow<Quiz?>(null)
+    val currentQuiz: StateFlow<Quiz?> = _currentQuiz.asStateFlow()
+
+    private val _selectedQuizOption = MutableStateFlow<Int?>(null)
+    val selectedQuizOption: StateFlow<Int?> = _selectedQuizOption.asStateFlow()
+
     init {
         tts = TextToSpeech(application) { status ->
             if (status == TextToSpeech.SUCCESS) {
@@ -172,6 +178,70 @@ class TutorViewModel(private val application: Application) : AndroidViewModel(ap
         mnnBridge.cancelGeneration()
         tts?.stop()
         _uiState.value = TutorUiState.Tutoring
+    }
+
+    fun selectQuizOption(index: Int) {
+        _selectedQuizOption.value = index
+    }
+
+    fun generateQuiz() {
+        if (_uiState.value == TutorUiState.InitializingModel || _uiState.value == TutorUiState.GeneratingQuiz) return
+        
+        generationJob?.cancel()
+        generationJob = viewModelScope.launch {
+            _uiState.value = TutorUiState.GeneratingQuiz
+            _currentQuiz.value = null
+            _selectedQuizOption.value = null
+            
+            // Build a prompt to ask for a quiz
+            val context = _messages.value.takeLast(6).joinToString("\n") { "${it.role.name}: ${it.content}" }
+            val prompt = "<|im_start|>system\nYou are a helpful tutor. Based on the recent conversation, generate a 4-option multiple choice question to test the user's understanding.\n\nFormat EXACTLY like this (do NOT use markdown, do NOT include anything else):\nQUESTION: [your question]\nA: [option A]\nB: [option B]\nC: [option C]\nD: [option D]\nCORRECT: [A/B/C/D]\nFEEDBACK: [explanation of the correct answer]<|im_end|>\n<|im_start|>user\nRecent conversation:\n${context}\n\nPlease generate a practice quiz now.<|im_end|>\n<|im_start|>assistant\n"
+            
+            try {
+                var fullText = ""
+                mnnBridge.generateStream(prompt).collect { chunk ->
+                    fullText = chunk
+                }
+                
+                // Parse it manually
+                val qMatch = Regex("QUESTION:\\s*(.+)").find(fullText)
+                val aMatch = Regex("A:\\s*(.+)").find(fullText)
+                val bMatch = Regex("B:\\s*(.+)").find(fullText)
+                val cMatch = Regex("C:\\s*(.+)").find(fullText)
+                val dMatch = Regex("D:\\s*(.+)").find(fullText)
+                val correctMatch = Regex("CORRECT:\\s*([A-D])").find(fullText)
+                val feedbackMatch = Regex("FEEDBACK:\\s*(.+)").find(fullText)
+                
+                if (qMatch != null && aMatch != null && bMatch != null && cMatch != null && dMatch != null && correctMatch != null && feedbackMatch != null) {
+                    val correctChar = correctMatch.groupValues[1].uppercase()[0]
+                    val correctIndex = correctChar - 'A'
+                    _currentQuiz.value = Quiz(
+                        question = qMatch.groupValues[1].trim(),
+                        options = listOf(aMatch.groupValues[1].trim(), bMatch.groupValues[1].trim(), cMatch.groupValues[1].trim(), dMatch.groupValues[1].trim()),
+                        correctIndex = correctIndex.coerceIn(0, 3),
+                        feedback = feedbackMatch.groupValues[1].trim()
+                    )
+                } else {
+                    // Fallback
+                    _currentQuiz.value = Quiz(
+                        question = "What was the main topic we just discussed?",
+                        options = listOf("Orbital Mechanics", "Quantum Physics", "Biology", "History"),
+                        correctIndex = 0,
+                        feedback = "We have been talking about Orbital Mechanics!"
+                    )
+                }
+            } catch (e: Exception) {
+                // Fallback
+                _currentQuiz.value = Quiz(
+                    question = "Error generating quiz. What was the main topic we just discussed?",
+                    options = listOf("Orbital Mechanics", "Quantum Physics", "Biology", "History"),
+                    correctIndex = 0,
+                    feedback = "We have been talking about Orbital Mechanics!"
+                )
+            } finally {
+                _uiState.value = TutorUiState.Tutoring
+            }
+        }
     }
 
     /**
@@ -410,6 +480,14 @@ sealed class TutorUiState(val displayName: String) {
     data object Idle : TutorUiState("Idle")
     data class Error(val message: String) : TutorUiState("Error")
 }
+
+// ─── Quiz Model ──────────────────────────────────────────────────────
+data class Quiz(
+    val question: String,
+    val options: List<String>,
+    val correctIndex: Int,
+    val feedback: String
+)
 
 // ─── Available Model ─────────────────────────────────────────────────
 data class AvailableModel(

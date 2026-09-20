@@ -23,8 +23,23 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+import com.adaptiq.tutor.viewmodel.TutorUiState
+import com.adaptiq.tutor.viewmodel.TutorViewModel
+import com.adaptiq.tutor.viewmodel.Quiz
+
 @Composable
-fun PracticeScreen() {
+fun PracticeScreen(viewModel: TutorViewModel) {
+    val currentQuiz by viewModel.currentQuiz.collectAsState()
+    val selectedOption by viewModel.selectedQuizOption.collectAsState()
+    val uiState by viewModel.uiState.collectAsState()
+
+    // Trigger quiz generation when screen opens if we don't have one
+    LaunchedEffect(Unit) {
+        if (currentQuiz == null && uiState != TutorUiState.GeneratingQuiz) {
+            viewModel.generateQuiz()
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -41,21 +56,20 @@ fun PracticeScreen() {
                 .clip(RoundedCornerShape(16.dp))
                 .background(Color(0xFF2C3E50)) // Fallback color
         ) {
-            // In a real app, this would be an Image. Using a gradient/color box for now
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
                     .padding(16.dp)
             ) {
                 Text(
-                    text = "ORBITAL MECHANICS LAB",
+                    text = "PRACTICE LAB",
                     color = Color.White.copy(alpha = 0.8f),
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 1.sp
                 )
                 Text(
-                    text = "Energy Transfer Mode",
+                    text = "Knowledge Check",
                     color = Color.White,
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold
@@ -63,132 +77,90 @@ fun PracticeScreen() {
             }
         }
 
-        // Options
-        OptionCard(
-            letter = "A",
-            text = "Kinetic energy increases, total energy increases",
-            isSelected = false,
-            isCorrect = false
-        )
-
-        OptionCard(
-            letter = "B",
-            text = "Kinetic energy decreases, total energy increases",
-            isSelected = true,
-            isCorrect = true,
-            feedback = "Spot on! Higher orbit implies lower orbital velocity (reducing kinetic energy), while potential energy becomes significantly less negative, lifting the total energy balance."
-        )
-
-        OptionCard(
-            letter = "C",
-            text = "Kinetic energy remains constant, total energy drops",
-            isSelected = false,
-            isCorrect = false
-        )
-
-        OptionCard(
-            letter = "D",
-            text = "Both kinetic and total energy decrease",
-            isSelected = false,
-            isCorrect = false
-        )
-
-        // Up Next Card
-        Surface(
-            color = Color(0xFFFFF3E0), // Light orange
-            shape = RoundedCornerShape(16.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Row(
-                modifier = Modifier
-                    .padding(16.dp)
-                    .fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Surface(
-                        color = Color(0xFFE65100),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.size(40.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Layers,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.padding(8.dp)
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Column {
-                        Text(
-                            text = "UP NEXT",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFFE65100)
-                        )
-                        Text(
-                            text = "Draggable Force Vectors",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF3E2723)
-                        )
-                    }
+        if (uiState == TutorUiState.GeneratingQuiz) {
+            Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator()
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text("Generating practice quiz based on your chats...")
                 }
-                Icon(
-                    Icons.Default.ChevronRight,
-                    contentDescription = null,
-                    tint = Color(0xFFE65100)
+            }
+        } else if (currentQuiz != null) {
+            val quiz = currentQuiz!!
+            Text(
+                text = quiz.question,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.DarkGray
+            )
+
+            // Options
+            val letters = listOf("A", "B", "C", "D")
+            quiz.options.forEachIndexed { index, optionText ->
+                val isSelected = selectedOption == index
+                val isCorrect = index == quiz.correctIndex
+                OptionCard(
+                    letter = letters.getOrElse(index) { "?" },
+                    text = optionText,
+                    isSelected = selectedOption != null && isSelected,
+                    isCorrect = isCorrect,
+                    showFeedback = selectedOption != null,
+                    feedback = if (isCorrect) quiz.feedback else "Not quite! Try again or review the concept.",
+                    onClick = {
+                        if (selectedOption == null) {
+                            viewModel.selectQuizOption(index)
+                        }
+                    }
                 )
             }
-        }
 
-        Spacer(modifier = Modifier.weight(1f, fill = false))
+            Spacer(modifier = Modifier.weight(1f, fill = false))
 
-        // Bottom Action Bar
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            // Clarify Button
-            Surface(
-                color = Color.White,
-                shape = RoundedCornerShape(24.dp),
-                border = border(1.dp, Color.LightGray, RoundedCornerShape(24.dp)),
-                modifier = Modifier.weight(1f),
-                onClick = { /* TODO */ }
+            // Bottom Action Bar
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Row(
-                    modifier = Modifier.padding(vertical = 12.dp),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
+                // Clarify Button
+                Surface(
+                    color = Color.White,
+                    shape = RoundedCornerShape(24.dp),
+                    border = border(1.dp, Color.LightGray, RoundedCornerShape(24.dp)),
+                    modifier = Modifier.weight(1f),
+                    onClick = { viewModel.speakMessage(quiz.feedback) }
                 ) {
-                    Icon(
-                        Icons.Default.Mic,
-                        contentDescription = null,
-                        tint = Color(0xFFE65100),
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "Clarify Vis-Viva",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = Color.DarkGray
-                    )
+                    Row(
+                        modifier = Modifier.padding(vertical = 12.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.Mic,
+                            contentDescription = null,
+                            tint = Color(0xFFE65100),
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Explain",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color.DarkGray
+                        )
+                    }
                 }
-            }
 
-            // Next Button
-            Button(
-                onClick = { /* TODO */ },
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF004D40)),
-                shape = RoundedCornerShape(24.dp),
-                modifier = Modifier.weight(1f).height(48.dp)
-            ) {
-                Text("Next")
-                Spacer(modifier = Modifier.width(4.dp))
-                Icon(Icons.Default.ArrowForward, contentDescription = null, modifier = Modifier.size(18.dp))
+                // Next Button
+                Button(
+                    onClick = { viewModel.generateQuiz() },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF004D40)),
+                    shape = RoundedCornerShape(24.dp),
+                    modifier = Modifier.weight(1f).height(48.dp)
+                ) {
+                    Text("Next Quiz")
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Icon(Icons.Default.ArrowForward, contentDescription = null, modifier = Modifier.size(18.dp))
+                }
             }
         }
     }
@@ -200,28 +172,49 @@ fun OptionCard(
     text: String,
     isSelected: Boolean,
     isCorrect: Boolean,
-    feedback: String? = null
+    showFeedback: Boolean = false,
+    feedback: String? = null,
+    onClick: () -> Unit = {}
 ) {
-    val backgroundColor = if (isSelected && isCorrect) Color(0xFFE8F5E9) else Color.White
-    val borderColor = if (isSelected && isCorrect) Color(0xFF4CAF50) else Color(0xFFE0E0E0)
+    val showGreen = showFeedback && isCorrect
+    val showRed = showFeedback && isSelected && !isCorrect
+    
+    val backgroundColor = when {
+        showGreen -> Color(0xFFE8F5E9)
+        showRed -> Color(0xFFFFEBEE)
+        else -> Color.White
+    }
+    
+    val borderColor = when {
+        showGreen -> Color(0xFF4CAF50)
+        showRed -> Color(0xFFF44336)
+        else -> Color(0xFFE0E0E0)
+    }
     
     Surface(
         color = backgroundColor,
         shape = RoundedCornerShape(16.dp),
         border = border(1.dp, borderColor, RoundedCornerShape(16.dp)),
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth(),
+        onClick = onClick
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 // Letter Circle
                 Surface(
-                    color = if (isSelected && isCorrect) Color(0xFF4CAF50) else Color(0xFFF5F5F5),
+                    color = when {
+                        showGreen -> Color(0xFF4CAF50)
+                        showRed -> Color(0xFFF44336)
+                        else -> Color(0xFFF5F5F5)
+                    },
                     shape = CircleShape,
                     modifier = Modifier.size(28.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        if (isSelected && isCorrect) {
+                        if (showGreen) {
                             Icon(Icons.Default.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                        } else if (showRed) {
+                            Icon(Icons.Default.Close, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
                         } else {
                             Text(
                                 text = letter,
@@ -239,12 +232,16 @@ fun OptionCard(
                     text = text,
                     fontSize = 15.sp,
                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                    color = if (isSelected && isCorrect) Color(0xFF1B5E20) else Color.DarkGray,
+                    color = when {
+                        showGreen -> Color(0xFF1B5E20)
+                        showRed -> Color(0xFFB71C1C)
+                        else -> Color.DarkGray
+                    },
                     modifier = Modifier.weight(1f)
                 )
             }
             
-            if (isSelected && feedback != null) {
+            if ((showGreen || showRed) && feedback != null) {
                 Spacer(modifier = Modifier.height(16.dp))
                 Surface(
                     color = Color.White,
