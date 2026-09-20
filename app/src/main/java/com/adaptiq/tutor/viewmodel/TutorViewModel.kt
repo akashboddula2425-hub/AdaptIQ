@@ -86,6 +86,16 @@ class TutorViewModel(private val application: Application) : AndroidViewModel(ap
     // ─── Public Actions ──────────────────────────────────────────
 
     /**
+     * Resets the model path and shows the model setup screen.
+     */
+    fun resetModelSelection() {
+        viewModelScope.launch {
+            userPreferences.setModelPath("")
+            _uiState.value = TutorUiState.ModelNotFound
+        }
+    }
+
+    /**
      * Loads the MNN model from the specified config path.
      */
     fun loadModel(configPath: String) {

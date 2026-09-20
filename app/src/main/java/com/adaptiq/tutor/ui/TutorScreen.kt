@@ -16,8 +16,8 @@ import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -85,9 +85,18 @@ fun TutorScreen(
                             containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)
                         ),
                         actions = {
+                            if (uiState != TutorUiState.ModelNotFound) {
+                                IconButton(onClick = { viewModel.resetModelSelection() }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Settings,
+                                        contentDescription = "Change AI Model",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
                             IconButton(onClick = { viewModel.stopAudio() }) {
                                 Icon(
-                                    imageVector = androidx.compose.material.icons.Icons.Default.Stop,
+                                    imageVector = Icons.Default.Stop,
                                     contentDescription = "Stop Audio",
                                     tint = MaterialTheme.colorScheme.primary
                                 )
@@ -154,11 +163,6 @@ fun TutorScreen(
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                         contentPadding = PaddingValues(vertical = 16.dp)
                     ) {
-                        // Header Module (Matches "Solar Geometry" design)
-                        item {
-                            ModuleHeaderCard()
-                        }
-                        
                         // Loading indicator
                         if (uiState == TutorUiState.InitializingModel) {
                             item { ModelLoadingCard() }
@@ -178,61 +182,6 @@ fun TutorScreen(
                     }
                 }
             }
-        }
-    }
-}
-
-@Composable
-fun ModuleHeaderCard() {
-    Surface(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surface,
-        shadowElevation = 2.dp
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Surface(
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                        shape = CircleShape,
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.padding(6.dp), tint = MaterialTheme.colorScheme.primary)
-                    }
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column {
-                        Text("ACTIVE MODULE", fontSize = 10.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-                        Text("Solar Geometry & Orbit", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-                Surface(
-                    color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.1f),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Row(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.FlashOn, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary, modifier = Modifier.size(14.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("+10 XP", fontSize = 12.sp, color = MaterialTheme.colorScheme.tertiary, fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Mastery Meter", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("76% Complete", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-            }
-            Spacer(modifier = Modifier.height(4.dp))
-            LinearProgressIndicator(
-                progress = { 0.76f },
-                modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
-                color = MaterialTheme.colorScheme.secondary,
-                trackColor = MaterialTheme.colorScheme.surfaceVariant
-            )
         }
     }
 }

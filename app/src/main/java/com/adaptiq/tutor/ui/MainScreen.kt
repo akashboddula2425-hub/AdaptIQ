@@ -64,7 +64,14 @@ fun MainScreen(viewModel: TutorViewModel) {
                             }
                         }
 
-                        // Removed Score / Badges
+                        // Settings / Change Model
+                        IconButton(onClick = { viewModel.resetModelSelection() }) {
+                            Icon(
+                                imageVector = Icons.Default.Settings,
+                                contentDescription = "Change AI Model",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }
